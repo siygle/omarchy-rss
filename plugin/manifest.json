@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "siygle.rss",
+  "name": "RSS",
+  "version": "0.1.0",
+  "author": "siygle",
+  "license": "MIT",
+  "description": "Lightweight RSS/Atom notifier with feed management and OPML import/export.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "RSS",
+    "description": "Unread RSS/Atom articles and feed management.",
+    "category": "Utilities",
+    "allowMultiple": false,
+    "defaults": {
+      "refreshSeconds": 60,
+      "articleLimit": 20,
+      "feedPageSize": 6
+    },
+    "schema": [
+      { "key": "refreshSeconds", "type": "number", "label": "UI refresh interval seconds", "defaultValue": 60 },
+      { "key": "articleLimit", "type": "number", "label": "Unread articles shown", "defaultValue": 20 },
+      { "key": "feedPageSize", "type": "number", "label": "Feeds per page", "defaultValue": 6 }
+    ]
+  }
+}

@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Tiny dependency-free RSS/Atom backend for the Omarchy RSS plugin."""
+from __future__ import annotations
+
+import argparse, html, json, os, sqlite3, sys, time, urllib.error, urllib.parse, urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from xml.etree import ElementTree as ET
+
+APP = "omarchy-rss"
+DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home()/".local/share")) / APP
+DB_PATH = DATA_DIR / "rss.db"
+DEFAULT_EXPORT = Path.home()/"Downloads/omarchy-rss-feeds.opml"
+UA = "omarchy-rss/0.1 (+https://github.com/siygle/omarchy-rss)"
+
+
+def now(): return datetime.now(timezone.utc).isoformat()
+def ts(): return int(time.time())
+def j(x): print(json.dumps(x, ensure_ascii=False))
+
+def db():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    con.execute("pragma foreign_keys=on")
+    con.executescript('''
+    create table if not exists feeds(
+      id integer primary key, title text not null, url text not null unique,
+      site_url text, enabled integer not null default 1,
+      last_checked_at text, last_error text, created_at text not null);
+    create table if not exists articles(
+      id integer primary key, feed_id integer not null references feeds(id) on delete cascade,
+      title text not null, url text not null, guid text, published_at text,
+      seen_at text not null, read_at text,
+      unique_key text not null unique);
+    ''')
+    return con
+
+def fetch(url, timeout=15):
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        final_url = r.geturl()
+        data = r.read(3_000_000)
+    return final_url, data
+
+def text_of(el, path, ns=None):
+    found = el.find(path, ns or {})
+    if found is None or found.text is None: return ""
+    return html.unescape(found.text.strip())
+
+def attr(el, name): return html.unescape((el.attrib.get(name) or "").strip())
+
+def parse_feed(data):
+    root = ET.fromstring(data)
+    tag = root.tag.split('}', 1)[-1].lower()
+    items = []
+    if tag == "rss":
+        ch = root.find("channel")
+        if ch is None: raise ValueError("RSS channel not found")
+        title = text_of(ch, "title") or "Untitled feed"
+        site_url = text_of(ch, "link")
+        for it in ch.findall("item"):
+            link = text_of(it, "link")
+            guid = text_of(it, "guid")
+            items.append({"title": text_of(it, "title") or link or guid or "Untitled", "url": link or guid, "guid": guid, "published_at": text_of(it, "pubDate") or text_of(it, "{http://purl.org/dc/elements/1.1/}date")})
+        return title, site_url, items
+    if tag == "feed":
+        ns = {"a": "http://www.w3.org/2005/Atom"}
+        title = text_of(root, "a:title", ns) or text_of(root, "title") or "Untitled feed"
+        site_url = ""
+        for l in root.findall("a:link", ns) + root.findall("link"):
+            if attr(l, "rel") in ("", "alternate"): site_url = attr(l, "href"); break
+        for en in root.findall("a:entry", ns) + root.findall("entry"):
+            link = ""
+            for l in en.findall("a:link", ns) + en.findall("link"):
+                if attr(l, "rel") in ("", "alternate"): link = attr(l, "href"); break
+            guid = text_of(en, "a:id", ns) or text_of(en, "id")
+            items.append({"title": text_of(en, "a:title", ns) or text_of(en, "title") or link or guid or "Untitled", "url": link or guid, "guid": guid, "published_at": text_of(en, "a:updated", ns) or text_of(en, "a:published", ns) or text_of(en, "updated")})
+        return title, site_url, items
+    raise ValueError("Invalid RSS or Atom feed")
+
+def unique(feed_id, item):
+    key = item.get("guid") or item.get("url") or (item.get("title", "") + "|" + item.get("published_at", ""))
+    return f"{feed_id}:{key}"
+
+def refresh_feed(con, feed):
+    try:
+        _, data = fetch(feed["url"])
+        title, site_url, items = parse_feed(data)
+        inserted = 0
+        for it in items:
+            if not it.get("url"): continue
+            uk = unique(feed["id"], it)
+            cur = con.execute("insert or ignore into articles(feed_id,title,url,guid,published_at,seen_at,unique_key) values(?,?,?,?,?,?,?)", (feed["id"], it["title"][:500], it["url"][:1000], it.get("guid"), it.get("published_at"), now(), uk))
+            inserted += cur.rowcount
+        con.execute("update feeds set title=?, site_url=?, last_checked_at=?, last_error=null where id=?", (title[:300], site_url[:1000], now(), feed["id"]))
+        con.commit(); return {"ok": True, "new": inserted}
+    except Exception as e:
+        con.execute("update feeds set last_checked_at=?, last_error=? where id=?", (now(), str(e)[:500], feed["id"]))
+        con.commit(); return {"ok": False, "error": str(e)}
+
+def cmd_add(args):
+    con = db(); final, data = fetch(args.url); title, site_url, _ = parse_feed(data)
+    cur = con.execute("insert into feeds(title,url,site_url,created_at) values(?,?,?,?)", (title[:300], final, site_url[:1000], now()))
+    con.commit(); feed = con.execute("select * from feeds where id=?", (cur.lastrowid,)).fetchone(); refresh_feed(con, feed); print(f"Added {title}: {final}")
+
+def rows_to_dicts(rows): return [dict(r) for r in rows]
+
+def cmd_status(args):
+    con = db(); unread = con.execute("select count(*) c from articles where read_at is null").fetchone()["c"]
+    feeds = con.execute("select count(*) c from feeds where enabled=1").fetchone()["c"]
+    last = con.execute("select max(last_checked_at) m from feeds").fetchone()["m"]
+    j({"unread": unread, "feeds": feeds, "lastCheckedAt": last}) if args.json else print(f"{unread} unread · {feeds} feeds")
+
+def cmd_feeds(args):
+    con = db(); rows = con.execute("select f.*, (select count(*) from articles a where a.feed_id=f.id and a.read_at is null) unread from feeds f order by lower(title)").fetchall()
+    j(rows_to_dicts(rows)) if args.json else [print(f"{r['id']}\t{r['title']}\t{r['url']}") for r in rows]
+
+def cmd_articles(args):
+    con = db(); where = "where a.read_at is null" if args.unread else ""
+    rows = con.execute(f"select a.*, f.title feed_title from articles a join feeds f on f.id=a.feed_id {where} order by a.id desc limit ?", (args.limit,)).fetchall()
+    j(rows_to_dicts(rows)) if args.json else [print(f"{r['id']}\t[{r['feed_title']}] {r['title']}\t{r['url']}") for r in rows]
+
+def cmd_dump(args):
+    con = db()
+    unread = con.execute("select count(*) c from articles where read_at is null").fetchone()["c"]
+    feeds_count = con.execute("select count(*) c from feeds where enabled=1").fetchone()["c"]
+    last = con.execute("select max(last_checked_at) m from feeds").fetchone()["m"]
+    articles = con.execute("select a.*, f.title feed_title from articles a join feeds f on f.id=a.feed_id where a.read_at is null order by a.id desc limit ?", (args.limit,)).fetchall()
+    feeds = con.execute("select f.*, (select count(*) from articles a where a.feed_id=f.id and a.read_at is null) unread from feeds f order by lower(title)").fetchall()
+    j({"status": {"unread": unread, "feeds": feeds_count, "lastCheckedAt": last}, "articles": rows_to_dicts(articles), "feeds": rows_to_dicts(feeds)})
+
+def cmd_refresh(args):
+    con = db(); feeds = con.execute("select * from feeds where enabled=1" + (" and id=?" if args.feed_id else ""), (() if not args.feed_id else (args.feed_id,))).fetchall()
+    result = {str(f["id"]): refresh_feed(con, f) for f in feeds}; j(result) if args.json else print("Refreshed")
+
+def cmd_delete(args): db().execute("delete from feeds where id=?", (args.id,)).connection.commit(); print("Deleted")
+def cmd_read(args): db().execute("update articles set read_at=? where id=?", (now(), args.id)).connection.commit(); print("Read")
+def cmd_read_all(args): db().execute("update articles set read_at=? where read_at is null", (now(),)).connection.commit(); print("Read all")
+
+def opml_feeds(path):
+    root = ET.parse(Path(path).expanduser()).getroot(); feeds = []
+    for el in root.iter():
+        url = el.attrib.get("xmlUrl") or el.attrib.get("xmlurl")
+        if url: feeds.append({"title": el.attrib.get("title") or el.attrib.get("text") or url, "url": url})
+    return feeds
+
+def cmd_import(args):
+    con = db(); added = skipped = 0
+    for f in opml_feeds(args.path):
+        try:
+            con.execute("insert into feeds(title,url,created_at) values(?,?,?)", (f["title"][:300], f["url"], now())); added += 1
+        except sqlite3.IntegrityError: skipped += 1
+    con.commit(); print(f"Imported {added}, skipped {skipped}")
+
+def cmd_export(args):
+    con = db(); rows = con.execute("select title,url,site_url from feeds order by lower(title)").fetchall()
+    out = ['<?xml version="1.0" encoding="UTF-8"?>', '<opml version="2.0"><head><title>Omarchy RSS feeds</title></head><body>']
+    for r in rows:
+        out.append(f'<outline type="rss" text="{html.escape(r["title"])}" title="{html.escape(r["title"])}" xmlUrl="{html.escape(r["url"])}"' + (f' htmlUrl="{html.escape(r["site_url"])}"' if r["site_url"] else '') + '/>')
+    out.append('</body></opml>')
+    path = Path(args.path or DEFAULT_EXPORT).expanduser(); path.parent.mkdir(parents=True, exist_ok=True); path.write_text("\n".join(out), encoding="utf-8"); print(path)
+
+def daemon(args):
+    interval = max(60, int(args.interval)); print(f"omarchy-rss daemon: interval={interval}s db={DB_PATH}", flush=True)
+    while True:
+        cmd_refresh(argparse.Namespace(feed_id=None,json=False)); time.sleep(interval)
+
+def main():
+    p = argparse.ArgumentParser(); sub = p.add_subparsers(dest="cmd", required=True)
+    s=sub.add_parser("status"); s.add_argument("--json", action="store_true"); s.set_defaults(func=cmd_status)
+    s=sub.add_parser("feeds"); s.add_argument("--json", action="store_true"); s.set_defaults(func=cmd_feeds)
+    s=sub.add_parser("articles"); s.add_argument("--json", action="store_true"); s.add_argument("--limit", type=int, default=20); s.add_argument("--all", dest="unread", action="store_false", default=True); s.set_defaults(func=cmd_articles)
+    s=sub.add_parser("dump"); s.add_argument("--limit", type=int, default=20); s.set_defaults(func=cmd_dump)
+    s=sub.add_parser("add"); s.add_argument("url"); s.set_defaults(func=cmd_add)
+    s=sub.add_parser("delete"); s.add_argument("id", type=int); s.set_defaults(func=cmd_delete)
+    s=sub.add_parser("refresh"); s.add_argument("feed_id", nargs="?", type=int); s.add_argument("--json", action="store_true"); s.set_defaults(func=cmd_refresh)
+    s=sub.add_parser("read"); s.add_argument("id", type=int); s.set_defaults(func=cmd_read)
+    s=sub.add_parser("read-all"); s.set_defaults(func=cmd_read_all)
+    s=sub.add_parser("import-opml"); s.add_argument("path"); s.set_defaults(func=cmd_import)
+    s=sub.add_parser("export-opml"); s.add_argument("path", nargs="?"); s.set_defaults(func=cmd_export)
+    s=sub.add_parser("daemon"); s.add_argument("--interval", type=int, default=900); s.set_defaults(func=daemon)
+    args = p.parse_args(); args.func(args)
+if __name__ == "__main__": main()

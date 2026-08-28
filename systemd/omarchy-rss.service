@@ -1,0 +1,12 @@
+[Unit]
+Description=Omarchy RSS feed refresher
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/omarchy-rss daemon --interval 900
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
