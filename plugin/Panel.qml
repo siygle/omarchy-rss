@@ -157,11 +157,22 @@ Panel {
             visible: root.view === "articles"
             width: parent.width
             spacing: Style.space(8)
-            Row { spacing: Style.space(8); Button { text: "Refresh"; onClicked: root.refreshAll() }; Button { text: "Mark all read"; onClicked: root.readAll() } }
+            Row {
+              spacing: Style.space(8)
+              Button { text: "Refresh"; onClicked: root.refreshAll() }
+              Button { text: "Mark all read"; onClicked: root.readAll() }
+            }
             Repeater { model: root.articles
               delegate: Rectangle {
-                width: content.width - Style.space(32); height: articleCol.implicitHeight + Style.space(12); color: Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.06); radius: Style.radius.s
-                Column { id: articleCol; anchors.fill: parent; anchors.margins: Style.space(8); spacing: Style.space(3)
+                width: content.width - Style.space(32)
+                height: articleCol.implicitHeight + Style.space(12)
+                color: Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.06)
+                radius: Style.radius.s
+                Column {
+                  id: articleCol
+                  anchors.fill: parent
+                  anchors.margins: Style.space(8)
+                  spacing: Style.space(3)
                   Text { text: "[" + modelData.feed_title + "]"; color: Qt.darker(root.bar.foreground, 1.35); font.family: root.bar.fontFamily; elide: Text.ElideRight; width: parent.width }
                   Text { text: modelData.title; color: root.bar.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.body; elide: Text.ElideRight; width: parent.width }
                   Text { text: modelData.url; color: Color.accent; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; width: parent.width }
@@ -175,18 +186,38 @@ Panel {
             visible: root.view === "feeds"
             width: parent.width
             spacing: Style.space(8)
-            Text { text: "Feeds " + (root.feeds.length ? (root.feedPage + 1) + " / " + root.totalFeedPages : "0"); color: root.bar.foreground; font.family: root.bar.fontFamily }
+            Text {
+              text: "Feeds " + (root.feeds.length ? (root.feedPage + 1) + " / " + root.totalFeedPages : "0")
+              color: root.bar.foreground
+              font.family: root.bar.fontFamily
+            }
             Repeater { model: root.feeds.slice(root.feedPage * root.feedPageSize, (root.feedPage + 1) * root.feedPageSize)
-              delegate: Rectangle { width: content.width - Style.space(32); height: feedCol.implicitHeight + Style.space(12); color: Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.06); radius: Style.radius.s
-                Column { id: feedCol; anchors.fill: parent; anchors.margins: Style.space(8); spacing: Style.space(4)
+              delegate: Rectangle {
+                width: content.width - Style.space(32)
+                height: feedCol.implicitHeight + Style.space(12)
+                color: Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.06)
+                radius: Style.radius.s
+                Column {
+                  id: feedCol
+                  anchors.fill: parent
+                  anchors.margins: Style.space(8)
+                  spacing: Style.space(4)
                   Text { text: modelData.title + "  ·  " + modelData.unread + " unread"; color: root.bar.foreground; font.family: root.bar.fontFamily; elide: Text.ElideRight; width: parent.width }
                   Text { text: modelData.url; color: Qt.darker(root.bar.foreground, 1.35); font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; width: parent.width }
                   Text { visible: modelData.last_error; text: "Error: " + modelData.last_error; color: Color.urgent; font.family: root.bar.fontFamily; font.pixelSize: Style.font.caption; elide: Text.ElideRight; width: parent.width }
-                  Row { spacing: Style.space(8); Button { text: "Refresh"; onClicked: root.refreshFeed(modelData.id) }; Button { text: "Delete"; onClicked: root.deleteFeed(modelData.id) } }
+                  Row {
+                    spacing: Style.space(8)
+                    Button { text: "Refresh"; onClicked: root.refreshFeed(modelData.id) }
+                    Button { text: "Delete"; onClicked: root.deleteFeed(modelData.id) }
+                  }
                 }
               }
             }
-            Row { spacing: Style.space(8); Button { text: "Prev"; enabled: root.feedPage > 0; onClicked: root.feedPage-- }; Button { text: "Next"; enabled: root.feedPage < root.totalFeedPages - 1; onClicked: root.feedPage++ } }
+            Row {
+              spacing: Style.space(8)
+              Button { text: "Prev"; enabled: root.feedPage > 0; onClicked: root.feedPage-- }
+              Button { text: "Next"; enabled: root.feedPage < root.totalFeedPages - 1; onClicked: root.feedPage++ }
+            }
           }
 
           Column {
@@ -194,7 +225,14 @@ Panel {
             width: parent.width
             spacing: Style.space(8)
             Text { text: "Add RSS / Atom feed"; color: root.bar.foreground; font.family: root.bar.fontFamily }
-            TextField { id: addField; width: parent.width - Style.space(32); placeholderText: "https://example.com/feed.xml"; text: root.addUrl; onTextChanged: root.addUrl = text; onAccepted: root.addFeed() }
+            TextField {
+              id: addField
+              width: parent.width - Style.space(32)
+              placeholderText: "https://example.com/feed.xml"
+              text: root.addUrl
+              onTextChanged: root.addUrl = text
+              onAccepted: root.addFeed()
+            }
             Button { text: "Add feed"; onClicked: root.addFeed() }
           }
 
@@ -203,8 +241,17 @@ Panel {
             width: parent.width
             spacing: Style.space(8)
             Text { text: "OPML import / export"; color: root.bar.foreground; font.family: root.bar.fontFamily }
-            TextField { id: opmlField; width: parent.width - Style.space(32); text: root.opmlPath; onTextChanged: root.opmlPath = text }
-            Row { spacing: Style.space(8); Button { text: "Import"; onClicked: root.importOpml() }; Button { text: "Export"; onClicked: root.exportOpml() } }
+            TextField {
+              id: opmlField
+              width: parent.width - Style.space(32)
+              text: root.opmlPath
+              onTextChanged: root.opmlPath = text
+            }
+            Row {
+              spacing: Style.space(8)
+              Button { text: "Import"; onClicked: root.importOpml() }
+              Button { text: "Export"; onClicked: root.exportOpml() }
+            }
           }
         }
       }
