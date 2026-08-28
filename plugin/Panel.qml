@@ -49,6 +49,8 @@ Panel {
       feedCount = s.feeds || 0
       articles = obj.articles || []
       feeds = obj.feeds || []
+      if (obj.refreshing) statusText = "Refreshing in background..."
+      else if (statusText === "Refreshing in background...") statusText = ""
       if (feedPage >= totalFeedPages) feedPage = Math.max(0, totalFeedPages - 1)
     })
   }
@@ -68,8 +70,8 @@ Panel {
     apiDelete("/feeds/" + id, function() { statusText = "Feed deleted"; refresh() })
   }
 
-  function refreshFeed(id) { statusText = "Refreshing..."; apiPost("/feeds/" + id + "/refresh", {}, function() { statusText = "Refreshed"; refresh() }) }
-  function refreshAll() { statusText = "Refreshing..."; apiPost("/refresh", {}, function() { statusText = "Refreshed"; refresh() }) }
+  function refreshFeed(id) { statusText = "Refresh queued"; apiPost("/feeds/" + id + "/refresh", {}, function() { statusText = "Refreshing in background..."; refresh() }) }
+  function refreshAll() { statusText = "Refresh queued"; apiPost("/refresh", {}, function() { statusText = "Refreshing in background..."; refresh() }) }
   function readAll() { apiPost("/articles/read-all", {}, refresh) }
   function importOpml() { statusText = "Importing OPML..."; apiPost("/opml/import", { path: opmlPath }, function() { statusText = "OPML imported"; refresh() }) }
   function exportOpml() { statusText = "Exporting OPML..."; apiPost("/opml/export", { path: opmlPath }, function() { statusText = "Exported: " + opmlPath; refresh() }) }
@@ -168,7 +170,7 @@ Panel {
                 width: content.width - Style.space(32)
                 height: articleCol.implicitHeight + Style.space(12)
                 color: Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.06)
-                radius: Style.radius.s
+                radius: Style.cornerRadius
                 Column {
                   id: articleCol
                   anchors.fill: parent
@@ -197,7 +199,7 @@ Panel {
                 width: content.width - Style.space(32)
                 height: feedCol.implicitHeight + Style.space(12)
                 color: Qt.rgba(root.bar.foreground.r, root.bar.foreground.g, root.bar.foreground.b, 0.06)
-                radius: Style.radius.s
+                radius: Style.cornerRadius
                 Column {
                   id: feedCol
                   anchors.fill: parent

@@ -13,6 +13,8 @@ DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home()/".local/share")) / A
 DB_PATH = DATA_DIR / "rss.db"
 DEFAULT_EXPORT = Path.home()/"Downloads/omarchy-rss-feeds.opml"
 UA = "omarchy-rss/0.1 (+https://github.com/siygle/omarchy-rss)"
+REFRESH_LOCK = threading.Lock()
+REFRESHING = False
 
 
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -202,7 +204,9 @@ class Api(BaseHTTPRequestHandler):
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path == "/dump":
                 q = urllib.parse.parse_qs(parsed.query)
-                self.send_json(dump_state(int((q.get("limit") or [20])[0]))); return
+                data = dump_state(int((q.get("limit") or [20])[0]))
+                data["refreshing"] = REFRESHING
+                self.send_json(data); return
             self.send_json({"error": "not found"}, 404)
         except Exception as e: self.handle_error(e)
 
@@ -212,11 +216,11 @@ class Api(BaseHTTPRequestHandler):
             data = self.body()
             con = db()
             if path == "/feeds": self.send_json(add_feed_url(data.get("url", ""))); return
-            if path == "/refresh": cmd_refresh(argparse.Namespace(feed_id=None, json=False)); self.send_json({"ok": True}); return
+            if path == "/refresh": self.send_json(queue_refresh(None)); return
             if path.startswith("/feeds/") and path.endswith("/refresh"):
                 feed_id = int(path.split("/")[2]); feed = con.execute("select * from feeds where id=?", (feed_id,)).fetchone()
                 if not feed: self.send_json({"error": "feed not found"}, 404); return
-                self.send_json(refresh_feed(con, feed)); return
+                self.send_json(queue_refresh(feed_id)); return
             if path.startswith("/articles/") and path.endswith("/read"):
                 article_id = int(path.split("/")[2]); con.execute("update articles set read_at=? where id=?", (now(), article_id)); con.commit(); self.send_json({"ok": True}); return
             if path == "/articles/read-all": con.execute("update articles set read_at=? where read_at is null", (now(),)); con.commit(); self.send_json({"ok": True}); return
@@ -233,10 +237,29 @@ class Api(BaseHTTPRequestHandler):
             self.send_json({"error": "not found"}, 404)
         except Exception as e: self.handle_error(e)
 
+def refresh_worker(feed_id=None):
+    global REFRESHING
+    if not REFRESH_LOCK.acquire(blocking=False):
+        return False
+    REFRESHING = True
+    try:
+        cmd_refresh(argparse.Namespace(feed_id=feed_id, json=False))
+    except Exception as e:
+        print(f"refresh failed: {e}", file=sys.stderr, flush=True)
+    finally:
+        REFRESHING = False
+        REFRESH_LOCK.release()
+    return True
+
+def queue_refresh(feed_id=None):
+    if REFRESHING:
+        return {"ok": True, "queued": False, "refreshing": True}
+    threading.Thread(target=refresh_worker, args=(feed_id,), daemon=True).start()
+    return {"ok": True, "queued": True, "refreshing": True}
+
 def refresh_loop(interval):
     while True:
-        try: cmd_refresh(argparse.Namespace(feed_id=None, json=False))
-        except Exception as e: print(f"refresh failed: {e}", file=sys.stderr, flush=True)
+        queue_refresh(None)
         time.sleep(interval)
 
 def daemon(args):
