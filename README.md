@@ -1,5 +1,8 @@
 # Omarchy RSS
 
+> [!IMPORTANT]
+> This repository is archived. For a better Omarchy RSS plugin, use [sanjyay/rss-reeder](https://github.com/sanjyay/rss-reeder) instead.
+
 Lightweight RSS/Atom notifier plugin for Omarchy.
 
 First version scope:
