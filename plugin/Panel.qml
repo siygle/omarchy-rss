@@ -37,6 +37,7 @@ Panel {
   function shellQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
   function jsonArg(obj) { return shellQuote(JSON.stringify(obj)) }
   function runJson(cmd, cb) { jsonProc.callback = cb; jsonProc.command = ["bash", "-lc", cmd]; jsonProc.running = true }
+  function runAction(cmd, after) { actionProc.after = after || null; actionProc.command = ["bash", "-lc", cmd]; actionProc.running = true }
   function apiGet(path, cb) { runJson("curl -fsS --max-time 8 " + shellQuote(apiBase + path), cb) }
   function apiPost(path, body, after) { runAction("curl -fsS --max-time 30 -H 'Content-Type: application/json' -X POST --data " + jsonArg(body || {}) + " " + shellQuote(apiBase + path), after) }
   function apiDelete(path, after) { runAction("curl -fsS --max-time 15 -X DELETE " + shellQuote(apiBase + path), after) }
@@ -70,7 +71,7 @@ Panel {
   function refreshFeed(id) { statusText = "Refreshing..."; apiPost("/feeds/" + id + "/refresh", {}, function() { statusText = "Refreshed"; refresh() }) }
   function refreshAll() { statusText = "Refreshing..."; apiPost("/refresh", {}, function() { statusText = "Refreshed"; refresh() }) }
   function readAll() { apiPost("/articles/read-all", {}, refresh) }
-  function importOpml() { statusText = "Importing OPML..."; apiPost("/opml/import", { path: opmlPath }, function() { statusText = "OPML imported"; refreshAll() }) }
+  function importOpml() { statusText = "Importing OPML..."; apiPost("/opml/import", { path: opmlPath }, function() { statusText = "OPML imported"; refresh() }) }
   function exportOpml() { statusText = "Exporting OPML..."; apiPost("/opml/export", { path: opmlPath }, function() { statusText = "Exported: " + opmlPath; refresh() }) }
 
   function open() { root.controller.show(); refresh() }
