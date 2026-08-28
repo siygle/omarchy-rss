@@ -32,12 +32,17 @@ Panel {
   readonly property string barLabel: unread > 0 ? "󰓰 " + unread : "󰓰"
   readonly property string tooltipText: unread + " unread RSS articles"
 
+  readonly property string apiBase: "http://127.0.0.1:8765"
+
   function shellQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
+  function jsonArg(obj) { return shellQuote(JSON.stringify(obj)) }
   function runJson(cmd, cb) { jsonProc.callback = cb; jsonProc.command = ["bash", "-lc", cmd]; jsonProc.running = true }
-  function runAction(cmd, after) { actionProc.after = after || null; actionProc.command = ["bash", "-lc", cmd]; actionProc.running = true }
+  function apiGet(path, cb) { runJson("curl -fsS --max-time 8 " + shellQuote(apiBase + path), cb) }
+  function apiPost(path, body, after) { runAction("curl -fsS --max-time 30 -H 'Content-Type: application/json' -X POST --data " + jsonArg(body || {}) + " " + shellQuote(apiBase + path), after) }
+  function apiDelete(path, after) { runAction("curl -fsS --max-time 15 -X DELETE " + shellQuote(apiBase + path), after) }
 
   function refresh() {
-    runJson("omarchy-rss dump --limit " + articleLimit, function(obj) {
+    apiGet("/dump?limit=" + articleLimit, function(obj) {
       var s = obj.status || {}
       unread = s.unread || 0
       feedCount = s.feeds || 0
@@ -48,25 +53,25 @@ Panel {
   }
 
   function openArticle(articleId, url) {
-    runAction("xdg-open " + shellQuote(url) + " >/dev/null 2>&1; omarchy-rss read " + articleId, refresh)
+    runAction("xdg-open " + shellQuote(url) + " >/dev/null 2>&1; curl -fsS --max-time 15 -X POST " + shellQuote(apiBase + "/articles/" + articleId + "/read"), refresh)
   }
 
   function addFeed() {
     if (addUrl.trim() === "") return
     statusText = "Adding feed..."
-    runAction("omarchy-rss add " + shellQuote(addUrl), function() { addUrl = ""; statusText = "Feed added"; view = "feeds"; runAction("omarchy-rss refresh >/dev/null 2>&1", refresh) })
+    apiPost("/feeds", { url: addUrl }, function() { addUrl = ""; statusText = "Feed added"; view = "feeds"; apiPost("/refresh", {}, refresh) })
   }
 
   function deleteFeed(id) {
     statusText = "Deleting feed..."
-    runAction("omarchy-rss delete " + id, function() { statusText = "Feed deleted"; refresh() })
+    apiDelete("/feeds/" + id, function() { statusText = "Feed deleted"; refresh() })
   }
 
-  function refreshFeed(id) { statusText = "Refreshing..."; runAction("omarchy-rss refresh " + id, function() { statusText = "Refreshed"; refresh() }) }
-  function refreshAll() { statusText = "Refreshing..."; runAction("omarchy-rss refresh", function() { statusText = "Refreshed"; refresh() }) }
-  function readAll() { runAction("omarchy-rss read-all", refresh) }
-  function importOpml() { statusText = "Importing OPML..."; runAction("omarchy-rss import-opml " + shellQuote(opmlPath), function() { statusText = "OPML imported"; refreshAll() }) }
-  function exportOpml() { statusText = "Exporting OPML..."; runAction("omarchy-rss export-opml " + shellQuote(opmlPath), function() { statusText = "Exported: " + opmlPath; refresh() }) }
+  function refreshFeed(id) { statusText = "Refreshing..."; apiPost("/feeds/" + id + "/refresh", {}, function() { statusText = "Refreshed"; refresh() }) }
+  function refreshAll() { statusText = "Refreshing..."; apiPost("/refresh", {}, function() { statusText = "Refreshed"; refresh() }) }
+  function readAll() { apiPost("/articles/read-all", {}, refresh) }
+  function importOpml() { statusText = "Importing OPML..."; apiPost("/opml/import", { path: opmlPath }, function() { statusText = "OPML imported"; refreshAll() }) }
+  function exportOpml() { statusText = "Exporting OPML..."; apiPost("/opml/export", { path: opmlPath }, function() { statusText = "Exported: " + opmlPath; refresh() }) }
 
   function open() { root.controller.show(); refresh() }
   function openFromHotkey() { root.controller.show(); refresh(); setCenterHoverRevealSuppressed(true) }

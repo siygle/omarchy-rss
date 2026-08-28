@@ -11,7 +11,7 @@ First version scope:
 - Add and delete feeds from the plugin UI
 - Paginated feed listing
 - Scheduled refresh in a local daemon
-- OPML import/export
+- OPML import/export from the plugin UI
 
 ## Install
 
@@ -23,27 +23,21 @@ omarchy bar put siygle.rss --after omarchy.clock
 
 Make sure `~/.local/bin` is in your PATH.
 
-## CLI
+## Usage
 
-```bash
-omarchy-rss daemon
-omarchy-rss refresh
-omarchy-rss status --json
-omarchy-rss feeds --json
-omarchy-rss add https://example.com/feed.xml
-omarchy-rss delete 1
-omarchy-rss articles --json --limit 20
-omarchy-rss read 123
-omarchy-rss read-all
-omarchy-rss import-opml ~/feeds.opml
-omarchy-rss export-opml ~/Downloads/omarchy-rss-feeds.opml
-```
+Everything is handled from the Omarchy widget UI:
+
+- Left click the RSS widget to open the panel
+- Articles: open links, refresh, mark all read
+- Feeds: paginated subscriptions, refresh one feed, delete feed
+- Add: add an RSS/Atom URL
+- OPML: import/export an OPML file path
 
 ## Data
 
 - Database: `~/.local/share/omarchy-rss/rss.db`
 - Default OPML export: `~/Downloads/omarchy-rss-feeds.opml`
 
-## Notes
+## Architecture
 
-The plugin delegates parsing, persistence, scheduling, and OPML handling to the local `omarchy-rss` daemon/CLI. The QML side stays small and only renders state plus invokes commands.
+The QML plugin renders the UI and talks to a local HTTP daemon at `127.0.0.1:8765`. The daemon owns parsing, persistence, scheduled refresh, and OPML import/export.
